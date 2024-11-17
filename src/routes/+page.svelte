@@ -16,21 +16,18 @@
         ? "any time"
         : new Date(0, 0, 0, 0, timeFilter).toLocaleString('en', { timeStyle: 'short' });
 
-    // Function to get the coordinates of the stations
     function getCoords(station) {
         if (!map) return { cx: 0, cy: 0 };
         const { x, y } = map.project([+station.Long, +station.Lat]);
         return { cx: x, cy: y };
     }
 
-    // Function to convert date to minutes since midnight
     function minutesSinceMidnight(date) {
         return date.getHours() * 60 + date.getMinutes();
     }
 
     onMount(async () => {
         try {
-            // Initialize Mapbox map
             map = new mapboxgl.Map({
                 container: 'map',
                 style: 'mapbox://styles/mapbox/streets-v12',
@@ -40,7 +37,6 @@
 
             await new Promise((resolve) => map.on('load', resolve));
 
-            // Add Boston and Cambridge bike route layers to map
             map.addSource('boston_route', {
                 type: 'geojson',
                 data: 'https://bostonopendata-boston.opendata.arcgis.com/datasets/boston::existing-bike-network-2022.geojson?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D',
@@ -81,14 +77,12 @@
                 },
             });
 
-            // Fetch data for stations and trips
             const stationsUrl = 'https://vis-society.github.io/labs/8/data/bluebikes-stations.csv';
             stations = await d3.csv(stationsUrl);
 
             const tripsUrl = 'https://vis-society.github.io/labs/8/data/bluebikes-traffic-2024-03.csv';
             trips = await d3.csv(tripsUrl);
 
-            // Convert trip start and end times to Date objects
             trips = await d3.csv(tripsUrl).then((trips) => {
                 for (let trip of trips) {
                     trip.started_at = new Date(trip.started_at);
@@ -97,11 +91,9 @@
                 return trips;
             });
 
-            // Create rolls for arrivals and departures by station
             const departures = d3.rollup(trips, (v) => v.length, (d) => d.start_station_id);
             const arrivals = d3.rollup(trips, (v) => v.length, (d) => d.end_station_id);
 
-            // Update stations with arrival and departure counts
             stations = stations.map((station) => {
                 let id = station.Number;
                 station.arrivals = arrivals.get(id) ?? 0;
@@ -116,13 +108,13 @@
         }
     });
 
-    // Conditional scale for radius size of stations
     $: radiusScale = d3
         .scaleSqrt()
         .domain([0, d3.max(stations, (d) => d.totalTraffic)])
         .range(timeFilter === -1 ? [0, 25] : [3, 50]);
 
-    // Filter trips based on timeFilter
+    const stationFlow = d3.scaleQuantize().domain([0, 1]).range([0, 0.5, 1]);
+
     $: filteredTrips =
         timeFilter === -1
             ? trips
@@ -135,20 +127,16 @@
                 );
             });
 
-    // Filter arrivals and departures based on filtered trips
     $: filteredArrivals = d3.rollup(filteredTrips, (v) => v.length, (d) => d.start_station_id);
     $: filteredDepartures = d3.rollup(filteredTrips, (v) => v.length, (d) => d.end_station_id);
 
-    // Filter stations based on filtered trips
     $: filteredStations = stations.map((station) => {
-        // Clone station object to avoid mutation
         station = { ...station };
-
-        // Update station data based on filtered arrivals and departures
         station.arrivals = filteredArrivals.get(station.Number) ?? 0;
         station.departures = filteredDepartures.get(station.Number) ?? 0;
         station.totalTraffic = station.arrivals + station.departures;
-
+        const departureRatio = station.totalTraffic > 0 ? station.departures / station.totalTraffic : 0;
+        station.departureRatio = stationFlow(departureRatio);
         return station;
     });
 </script>
@@ -174,14 +162,20 @@
                     <circle
                         {...getCoords(station)}
                         r={radiusScale(station.totalTraffic)}
-                        fill="steelblue"
-                        fill-opacity="0.6"
-                        stroke="white"
+                        style="--departure-ratio: {station.departureRatio}"
                     />
                 {/each}
             </svg>
         {/key}
     </div>
+</div>
+
+
+<div class="legend">
+    <span>Legend:</span>
+    <div class="legend-item" style="--departure-ratio: 1;">More departures</div>
+    <div class="legend-item" style="--departure-ratio: 0.5;">Balanced</div>
+    <div class="legend-item" style="--departure-ratio: 0;">More arrivals</div>
 </div>
 
 <style>
@@ -229,6 +223,78 @@
 
     #svg-map circle {
         stroke: white;
-        fill-opacity: 0.6;
+        fill-opacity: 0.8;
+        fill: var(--color, gray);
     }
+
+    #svg-map circle {
+        --color-departures: steelblue;
+        --color-arrivals: darkorange;
+        --color: color-mix(
+            in oklch,
+            var(--color-departures) calc(100% * var(--departure-ratio)),
+            var(--color-arrivals)
+        );
+    }
+
+    /* Style for the legend container */
+.legend {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+
+/* Style for the legend label */
+.legend span {
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+/* Style for each legend item */
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 15px;
+    color: black;
+    border-radius: 5px;
+    position: relative;
+    font-size: 14px;
+}
+
+/* Create swatches using the ::before pseudo-element */
+.legend-item::before {
+    content: "";
+    display: block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--color, gray);
+}
+
+/* Color variations based on departure ratio */
+.legend-item:nth-child(4) {
+    --color: darkorange;
+}
+
+.legend-item:nth-child(2) {
+    --departure-ratio: 0.5;
+    --color: steelblue;
+}
+
+
+.legend-item:nth-child(3) {
+    --color-departures: steelblue;
+    --color-arrivals: darkorange;
+    --color: color-mix(
+        in oklch,
+        var(--color-departures) calc(100% * var(--departure-ratio)),
+        var(--color-arrivals)
+    );
+}
 </style>
