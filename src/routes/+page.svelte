@@ -8,18 +8,16 @@
 
     let map;
     let stations = [];
-    let mapViewChanged = 0; // Variable to track map movements
+    let mapViewChanged = 0; 
 
-    // Helper function to calculate circle coordinates
     function getCoords(station) {
-        if (!map) return { cx: 0, cy: 0 }; // Return dummy values if map is undefined
+        if (!map) return { cx: 0, cy: 0 }; 
         const { x, y } = map.project([+station.Long, +station.Lat]);
         return { cx: x, cy: y };
     }
 
     onMount(async () => {
         try {
-            // Initialize the Mapbox map
             map = new mapboxgl.Map({
                 container: 'map',
                 style: 'mapbox://styles/mapbox/streets-v12',
@@ -27,10 +25,8 @@
                 zoom: 12,
             });
 
-            // Wait for the map to load
             await new Promise((resolve) => map.on('load', resolve));
 
-            // Add Boston bike routes
             map.addSource('boston_route', {
                 type: 'geojson',
                 data: 'https://bostonopendata-boston.opendata.arcgis.com/datasets/boston::existing-bike-network-2022.geojson?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D',
@@ -51,12 +47,30 @@
                 },
             });
 
-            // Fetch station data and log to console
+            map.addSource('cambridge_route', {
+                type: 'geojson',
+                data: 'https://raw.githubusercontent.com/cambridgegis/cambridgegis_data/main/Recreation/Bike_Facilities/RECREATION_BikeFacilities.geojson', // Replace with actual URL
+            });
+
+            map.addLayer({
+                id: 'cambridge-bike-routes',
+                type: 'line',
+                source: 'cambridge_route',
+                layout: {
+                    'line-join': 'round',
+                    'line-cap': 'round',
+                },
+                paint: {
+                    'line-color': 'green', 
+                    'line-width': 2,
+                    'line-opacity': 0.5,
+                },
+            });
+
             const url = 'https://vis-society.github.io/labs/8/data/bluebikes-stations.csv';
             stations = await d3.csv(url);
             console.log('Stations data loaded:', stations);
 
-            // Trigger Svelte to update the DOM when the map moves
             $: map?.on('move', () => mapViewChanged++);
 
         } catch (error) {
@@ -64,14 +78,14 @@
         }
     });
 </script>
-<h1>Boston and Cambridge Bike Paths</h1> <!-- Added the missing title -->
+
+<h2>Boston and Cambridge Bike Paths</h2>
 <div id="map">
     <div id="svg-map">
-        <!-- Overlay SVG for circles -->
         {#key mapViewChanged}
             <svg>
                 {#each stations as station}
-                    <circle {...getCoords(station)} r="5" fill="steelblue" />
+                    <circle {...getCoords(station)} r="3" fill="steelblue" />
                 {/each}
             </svg>
         {/key}
@@ -80,25 +94,24 @@
 
 <style>
     #map {
-    position: relative;
-    width: 100%;
-    height: 500px;
-    margin-top: 0px; /* Add margin to push the map down */
-}
+        position: relative;
+        width: 100%;
+        height: 500px;
+        margin-top: 10px;
+    }
 
-#svg-map {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none; /* Allow interaction with the map */
-    z-index: 10; /* Keep SVG above the map */
-}
+    #svg-map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none; 
+        z-index: 10;
+    }
 
     #svg-map svg {
         width: 100%;
         height: 100%;
     }
-    
 </style>
