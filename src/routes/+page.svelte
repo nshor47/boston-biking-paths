@@ -8,10 +8,11 @@
 
     let map;
     let stations = [];
-    let mapViewChanged = 0; 
+    let trips = [];
+    let mapViewChanged = 0;
 
     function getCoords(station) {
-        if (!map) return { cx: 0, cy: 0 }; 
+        if (!map) return { cx: 0, cy: 0 };
         const { x, y } = map.project([+station.Long, +station.Lat]);
         return { cx: x, cy: y };
     }
@@ -49,7 +50,7 @@
 
             map.addSource('cambridge_route', {
                 type: 'geojson',
-                data: 'https://raw.githubusercontent.com/cambridgegis/cambridgegis_data/main/Recreation/Bike_Facilities/RECREATION_BikeFacilities.geojson', // Replace with actual URL
+                data: 'https://raw.githubusercontent.com/cambridgegis/cambridgegis_data/main/Recreation/Bike_Facilities/RECREATION_BikeFacilities.geojson',
             });
 
             map.addLayer({
@@ -61,22 +62,41 @@
                     'line-cap': 'round',
                 },
                 paint: {
-                    'line-color': 'green', 
+                    'line-color': 'green',
                     'line-width': 2,
                     'line-opacity': 0.5,
                 },
             });
 
-            const url = 'https://vis-society.github.io/labs/8/data/bluebikes-stations.csv';
-            stations = await d3.csv(url);
-            console.log('Stations data loaded:', stations);
+            const stationsUrl = 'https://vis-society.github.io/labs/8/data/bluebikes-stations.csv';
+            stations = await d3.csv(stationsUrl);
+
+            const tripsUrl = 'https://vis-society.github.io/labs/8/data/bluebikes-traffic-2024-03.csv';
+            trips = await d3.csv(tripsUrl);
+
+            // Calculate arrivals, departures, and total traffic
+            const departures = d3.rollup(trips, (v) => v.length, (d) => d.start_station_id);
+            const arrivals = d3.rollup(trips, (v) => v.length, (d) => d.end_station_id);
+
+            stations = stations.map((station) => {
+                let id = station.Number;
+                station.arrivals = arrivals.get(id) ?? 0;
+                station.departures = departures.get(id) ?? 0;
+                station.totalTraffic = station.arrivals + station.departures;
+                return station;
+            });
 
             $: map?.on('move', () => mapViewChanged++);
-
         } catch (error) {
             console.error('Error initializing map or fetching data:', error);
         }
     });
+
+    // Define the square root scale for circle radius
+    $: radiusScale = d3
+        .scaleSqrt()
+        .domain([0, d3.max(stations, (d) => d.totalTraffic)])
+        .range([0, 25]);
 </script>
 
 <h2>Boston and Cambridge Bike Paths</h2>
@@ -85,7 +105,13 @@
         {#key mapViewChanged}
             <svg>
                 {#each stations as station}
-                    <circle {...getCoords(station)} r="3" fill="steelblue" />
+                    <circle
+                        {...getCoords(station)}
+                        r={radiusScale(station.totalTraffic)}
+                        fill="steelblue"
+                        fill-opacity="0.6"
+                        stroke="white"
+                    />
                 {/each}
             </svg>
         {/key}
@@ -106,12 +132,17 @@
         left: 0;
         width: 100%;
         height: 100%;
-        pointer-events: none; 
+        pointer-events: none;
         z-index: 10;
     }
 
     #svg-map svg {
         width: 100%;
         height: 100%;
+    }
+
+    #svg-map circle {
+        stroke: white;
+        fill-opacity: 0.6;
     }
 </style>
